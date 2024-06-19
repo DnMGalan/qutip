@@ -646,7 +646,7 @@ class Qobj:
 
     def norm(
         self,
-        norm: Litteral["l2", "max", "fro", "tr", "one"] = None,
+        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
         kwargs: dict[str, Any] = None
     ) -> numbers.Number:
         """
@@ -720,9 +720,9 @@ class Qobj:
         out = _data.trace(self._data)
         # This ensures that trace can return something that is not a number such
         # as a `tensorflow.Tensor` in qutip-tensorflow.
-        return out.real if (self.isherm
-                        and hasattr(out, "real")
-                        ) else out
+        if settings.core["auto_real_casting"] and self.isherm:
+            out = out.real
+        return out
 
     def purity(self) -> numbers.Number:
         """Calculate purity of a quantum object.
@@ -794,10 +794,9 @@ class Qobj:
         """
         # TODO: add a `diagonal` method to the data layer?
         out = _data.to(_data.CSR, self.data).as_scipy().diagonal()
-        if np.any(np.imag(out) > settings.core['atol']) or not self.isherm:
-            return out
-        else:
-            return np.real(out)
+        if settings.core["auto_real_casting"] and self.isherm:
+            out = np.real(out)
+        return out
 
     def expm(self, dtype: LayerType = _data.Dense) -> Qobj:
         """Matrix exponential of quantum operator.
@@ -896,22 +895,7 @@ class Qobj:
         """
         if self._dims[0] != self._dims[1]:
             raise TypeError('sqrt only valid on square matrices')
-        if isinstance(self.data, _data.CSR) and sparse:
-            evals, evecs = _data.eigs_csr(self.data,
-                                          isherm=self._isherm,
-                                          tol=tol, maxiter=maxiter)
-        elif isinstance(self.data, _data.CSR):
-            evals, evecs = _data.eigs(_data.to(_data.Dense, self.data),
-                                      isherm=self._isherm)
-        else:
-            evals, evecs = _data.eigs(self.data, isherm=self._isherm)
-
-        dV = _data.diag([np.sqrt(evals, dtype=complex)], 0)
-        if self.isherm:
-            spDv = _data.matmul(dV, evecs.conj().transpose())
-        else:
-            spDv = _data.matmul(dV, _data.inv(evecs))
-        return Qobj(_data.matmul(evecs, spDv),
+        return Qobj(_data.sqrtm(self._data),
                     dims=self._dims,
                     copy=False)
 
@@ -991,7 +975,7 @@ class Qobj:
     def unit(
         self,
         inplace: bool = False,
-        norm: Litteral["l2", "max", "fro", "tr", "one"] = None,
+        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
         kwargs: dict[str, Any] = None
     ) -> Qobj:
         """
